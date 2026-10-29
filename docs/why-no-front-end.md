@@ -1,24 +1,9 @@
-# Why there is no front end
+# A competitive intelligence desk without a front end
 
-Crayon is a database with a subscription. The tables underneath it are ordinary: a few entities, a few relationships, a handful of workflows you repeat every week. What you pay for is the layer on top that lets people who do not write SQL get at those tables. Screens, filters, dashboards, forms.
+The weekly work is reading source observations, reviewing comparison points, preparing a deal and recording what the buyer decided. Ask for that work through Claude Code, Codex, OpenCode or Cursor. The agent runs the same deterministic CLI. No model calls or external credentials are built into it.
 
-That layer used to be the whole product, because talking to a database was hard. It is not hard any more. Open this folder in Claude Code, describe what you want, and it writes the query, runs it, and explains the answer. Ask a question the dashboard never had a chart for and you still get an answer.
+npm run view creates three local read-only dashboards. npm run docs creates internal battlecards, source registers and deal briefs. Change brand.json for your business name, logo path and six-digit colours. Those documents are the desk's working paperwork, not statutory forms. They remain private.
 
-## What you gain
+A screen can offer mobile access, offline capture, rich editing, drag and drop and collaboration. This base provides none of those. It also does not crawl competitor sites, buy external datasets, send alerts or synchronize a CRM. It is useful with your own source notes and prepared historical records. Where your business needs those services, Enterprise DNA scopes them in your version or connects the services you retain.
 
-- **Better answers.** A dashboard shows what the vendor decided to chart. Here you ask your own question, in your own words, and get it answered against your own data.
-- **No seats.** Everyone who needs to look can look. The bill does not grow with headcount.
-- **Your data in your Postgres.** Plain tables. Back them up, query them from anything, leave any time. There is no export step because there is nothing to leave.
-- **A process that matches you.** When your way of working changes, you add a command. You do not wait for a feature request to clear.
-
-## What you give up
-
-- **A visual board.** Stages are a table you ask about, not cards you drag.
-- **A phone app.** It runs where Claude Code runs.
-- **A vendor help desk.** This is open source. Enterprise DNA supports the installed version for businesses that want someone to call.
-
-## Who this fits
-
-Small teams who already use Claude Code, or who would rather learn to ask than learn another interface. If your team needs a screen to look at all day, keep Crayon. If you need the answers more than the screens, this is cheaper, faster and yours.
-
-Installed and run for you: https://enterprisedna.co/omni/instead-of/crayon
+The default database is local PGlite. DATABASE_URL selects Postgres with remote TLS verification. Keep credentials private, restrict database access, and back up your data. Generated HTML is a readable artifact, never a public application.

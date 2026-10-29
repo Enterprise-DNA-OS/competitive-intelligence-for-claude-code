@@ -1,0 +1,9 @@
+{
+  "id": "Insight ID",
+  "competitor": "Competitor Name",
+  "title": "Headline",
+  "summary": "Summary",
+  "source_url": "Link",
+  "date": "Observed Date",
+  "kind": "Type"
+}

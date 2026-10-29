@@ -1,0 +1,68 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import {spawnSync} from 'node:child_process';
+import {getDb,REPO_ROOT} from './lib/db.mjs';import {migrate} from './migrate.mjs';import {seed} from './seed.mjs';import {execute,reads,resolve,importCrayon,date} from './lib/intelligence.mjs';import {parseCsv} from './lib/csv.mjs';import {page,table} from './lib/render.mjs';
+const testUrl=process.env.TEST_POSTGRES_URL;
+if(testUrl){const u=new URL(testUrl);assert.equal(process.env.CI,'true','Postgres tests run only in isolated CI');assert.ok(['127.0.0.1','localhost'].includes(u.hostname));assert.equal(u.pathname,'/ci_test');}
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'competitive-test-'));process.env.DATABASE_URL=testUrl||'';process.env.DATA_DIR=path.join(temp,'db');process.env.OUTPUT_DIR=temp;
+const today=new Date().toISOString().slice(0,10),future=new Date(Date.now()+7*86400000).toISOString().slice(0,10),later=new Date(Date.now()+14*86400000).toISOString().slice(0,10);
+let db;const created=[];
+const run=(cmd,args=[],o={})=>execute(db,cmd,args,o);
+const count=async tab=>Number((await db.query(`select count(*) n from ${tab}`))[0].n);
+try{
+ db=await getDb();assert.equal((await migrate(db)).ran.length,1);assert.equal((await migrate(db)).ran.length,0);await seed(db);await seed(db);assert.equal(await count('competitors'),3);assert.equal(await count('evidence'),4);
+ for(const cmd of Object.keys(reads))assert.ok(Array.isArray(await run(cmd)),cmd);
+ assert.equal((await run('battlecard',['harbour metrics'])).filter(r=>r.usable).length,1);
+ assert.equal((await run('win-loss')).find(r=>r.competitor==='Harbour Metrics').win_rate_pct,'50.0');
+ assert.equal((await run('win-loss')).find(r=>r.competitor==='Alpine Reports').win_rate_pct,null);
+ assert.equal((await run('insights')).length,10);assert.ok((await run('weekly-review')).compliance.length>=3);
+ await assert.rejects(()=>resolve(db,'competitors','harbour'),e=>e.candidates.length===2);
+ await assert.rejects(()=>run('add-competitor',[],{name:'Missing actor',owner:'Operator'}),/actor/);
+ assert.throws(()=>date('2026-02-30','date'),/Invalid/);
+ const comp=await run('add-competitor',[],{actor:'Tester',name:'Test <script>alert(1)</script>',owner:'Tester'});
+ await assert.rejects(()=>run('add-competitor',[],{actor:'Tester',name:comp.name.toUpperCase(),owner:'Tester'}));
+ await run('add-competitor',[],{actor:'Tester',name:'Rolled back',owner:'Tester','dry-run':true});assert.equal(await count('competitors'),4);
+ await assert.rejects(()=>run('add-evidence',[],{actor:'Tester',competitor:comp.id,title:'Bad',summary:'Bad',source:'javascript:alert(1)',date:today}),/http/);
+ const e=await run('add-evidence',[],{actor:'Tester',competitor:comp.id,title:'Current source',summary:'Our checked note',source:'https://source.example/one',date:today,kind:'product',personal:true});
+ await assert.rejects(()=>run('review-evidence',[e.id],{actor:'Tester',rights:'owned',due:later}),/retention/);
+ await run('review-evidence',[e.id],{actor:'Tester',rights:'owned',due:later,retention:later});
+ const claim=await run('add-claim',[],{actor:'Tester',competitor:comp.id,evidence:e.id,statement:'Reviewed point',response:'Ask a specific question'});
+ await assert.rejects(()=>run('add-claim',[],{actor:'Tester',competitor:'Alpine Reports',evidence:e.id,statement:'Wrong competitor',response:'No'}),/another competitor/);
+ await assert.rejects(()=>run('approve-claim',['30000000-0000-0000-0000-000000000002'],{actor:'Tester',due:future}),/current reviewed/);
+ await run('approve-claim',[claim.id],{actor:'Tester',due:future});assert.ok((await run('battlecard',[comp.id]))[0].usable);
+ await db.query('update evidence set retention_review_on=current_date where id=$1',[e.id]);assert.equal((await run('battlecard',[comp.id]))[0].usable,false);
+ await run('review-evidence',[e.id],{actor:'Tester',rights:'owned',due:later,retention:later});
+ await db.query('update evidence set review_due=current_date-1 where id=$1',[e.id]);assert.equal((await run('battlecard',[comp.id]))[0].usable,false);
+ await run('review-evidence',[e.id],{actor:'Tester',rights:'owned',due:later,retention:later});
+ for(const cmd of ['draft-battlecard','draft-deal-brief','draft-weekly-brief']){const r=await run(cmd,cmd==='draft-battlecard'?[comp.id]:cmd==='draft-deal-brief'?['Coastal data renewal']:[]);created.push(r.file);assert.ok(fs.readFileSync(r.file,'utf8').includes('Internal draft'));}
+ await run('retire-claim',[claim.id],{actor:'Tester'});assert.equal((await run('battlecard',[comp.id]))[0].usable,false);
+ await assert.rejects(()=>run('add-deal',[],{actor:'Tester',competitor:comp.id,name:'Invalid amount',owner:'Tester',cents:'10.5',currency:'NZD',due:future}),/integer/);
+ const deal=await run('add-deal',[],{actor:'Tester',competitor:comp.id,name:'Test deal',owner:'Tester',cents:'10000',currency:'NZD',due:future});
+ await run('record-outcome',[deal.id],{actor:'Tester',outcome:'no_decision',reason:'Buyer postponed',date:today});
+ await assert.rejects(()=>run('record-outcome',[deal.id],{actor:'Tester',outcome:'won',reason:'Changed',date:today}),/already/);
+ const task=await run('add-task',[],{actor:'Tester',competitor:comp.id,name:'Check evidence',owner:'Tester',due:today});await run('complete-task',[task.id],{actor:'Tester'});await assert.rejects(()=>run('complete-task',[task.id],{actor:'Tester'}),/already/);
+ await run('log',[],{actor:'Tester',competitor:comp.id,note:'Internal note'});
+ const opts={actor:'Tester',owner:'Tester'};const file=path.join(REPO_ROOT,'examples/crayon.csv');
+ assert.equal((await importCrayon(db,['crayon',file],{...opts,'dry-run':true})).inserted,1);assert.equal(await count('evidence'),5);
+ assert.equal((await importCrayon(db,['crayon',file],opts)).inserted,1);assert.equal((await importCrayon(db,['crayon',file],opts)).skipped,1);
+ const [imported]=await db.query("select * from evidence where source_id='example-101'");assert.equal(imported.rights,'unknown');assert.equal(imported.reviewed_on,null);assert.equal(imported.personal,true);assert.ok(imported.raw.id);
+ const bad=path.join(temp,'conflict.csv');fs.writeFileSync(bad,fs.readFileSync(file,'utf8').replace('Prepared source example','Changed source'));
+ await assert.rejects(()=>importCrayon(db,['crayon',bad],opts),/Changed source/);
+ const atomic=path.join(temp,'atomic.json');fs.writeFileSync(atomic,JSON.stringify([{id:'new-atomic',competitor:'Atomic competitor',title:'New source',summary:'Prepared',source_url:'https://source.example',date:today},{id:'example-101',competitor:'Harbour Metrics',title:'Changed',summary:'Conflict',source_url:'https://source.example',date:today}]));
+ const before=await count('evidence');await assert.rejects(()=>importCrayon(db,['crayon',atomic],opts),/Changed source/);assert.equal(await count('evidence'),before);assert.equal((await db.query("select * from competitors where name='Atomic competitor'")).length,0);
+ const mapped=path.join(temp,'mapped.csv');fs.writeFileSync(mapped,'Insight ID,Competitor Name,Headline,Summary,Link,Observed Date,Type\nmap-1,Alpine Reports,Mapped,Summary,https://source.example,2026-10-01,news\n');assert.equal((await importCrayon(db,['crayon',mapped],{...opts,map:path.join(REPO_ROOT,'examples/column-map.json')})).inserted,1);
+ const dup=path.join(temp,'dup.csv');const raw=fs.readFileSync(file,'utf8');fs.writeFileSync(dup,raw+raw.split('\n')[1]+'\n');await assert.rejects(()=>importCrayon(db,['crayon',dup],opts),/Duplicate/);
+ assert.deepEqual(parseCsv('\uFEFFA,B\r\n"one, two","three\nlines"\r\n'),[{A:'one, two',B:'three\nlines'}]);assert.throws(()=>parseCsv('A,A\nx,y'),/unique/);assert.throws(()=>parseCsv('A,B\n"open,b'),/unclosed/);
+ const archive=await run('export');created.push(archive.file);assert.equal(JSON.parse(fs.readFileSync(archive.file)).records.evidence.length,await count('evidence'));
+ await assert.rejects(()=>db.query("update activity set detail='changed'"),/append-only/);
+ const unpriv='ci_reader_test';await db.exec(`create role ${unpriv}; grant usage on schema public to ${unpriv}; grant select on evidence_review to ${unpriv}; set role ${unpriv}`);await assert.rejects(()=>db.query('select * from evidence_review'),/permission denied/);await db.exec('reset role');
+ const html=page({title:'Report',sections:[{title:'Evidence',html:table([{name:'<script>alert(1)</script>'}])}]});assert.throws(()=>page({title:'Bad brand',brand:{primary:'red;}</style>',accent:'#ca5a8b',ink:'#0b0c18',paper:'#ffffff'}}),/six-digit/);assert.ok(html.includes('&lt;script&gt;'));assert.ok(!html.includes('<script>'));
+ await db.close();db=null;
+ function child(args,expected=0){const p=spawnSync(process.execPath,args,{cwd:REPO_ROOT,env:process.env,encoding:'utf8'});assert.equal(p.status,expected,p.stderr||p.error?.message);return p;}
+ assert.ok(JSON.parse(child(['scripts/intelligence.mjs','evidence-inbox','--json']).stdout).length);
+ const compact=child(['scripts/intelligence.mjs','evidence-inbox']).stdout;assert.ok(compact.includes('Review state'));assert.ok(!compact.includes('20000000-')); 
+ assert.equal(JSON.parse(child(['scripts/intelligence.mjs','battlecard','Harbour','--json'],1).stderr).candidates.length,2);
+ child(['scripts/intelligence.mjs','unknown','--actor=Tester'],1);
+ child(['scripts/view.mjs']);child(['scripts/docs.mjs']);
+ assert.equal(fs.readdirSync(path.join(temp,'views')).length,3);assert.ok(fs.readFileSync(path.join(temp,'views/battlecards.html'),'utf8').includes('Comparison point readiness'));
+ assert.ok(fs.readdirSync(path.join(temp,'docs-out/battlecard')).length>=3);
+ console.log('PASS: migrations, repeatable seed, all domain operations, ten insights, stale-claim gates, rights and retention, currency separation, import mapping/dry-run/repeat/conflict/rollback, private exports, CLI failures, restricted roles and escaped HTML.');
+}finally{if(db)await db.close();for(const file of created)fs.rmSync(file,{force:true});fs.rmSync(temp,{recursive:true,force:true});}

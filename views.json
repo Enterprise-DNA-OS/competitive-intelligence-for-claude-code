@@ -1,13 +1,36 @@
 [
   {
     "name": "week",
-    "title": "This week",
-    "subtitle": "Competitive Intelligence for Claude Code: what needs attention, rendered by npm run view",
+    "title": "Competitive review this week",
+    "subtitle": "Fictional demo when seeded. Internal records only.",
     "sections": [
       {
         "title": "Needs attention",
-        "note": "TODO(author): point this at the industry's attention view (overdue, stuck, quiet).",
-        "sql": "select 'replace me' as item, 'TODO(author)' as why"
+        "sql": "select kind,competitor,item,owner,due_on from attention order by due_on nulls first,competitor"
+      },
+      {
+        "title": "Win and loss by currency",
+        "sql": "select * from win_loss order by competitor,currency"
+      }
+    ]
+  },
+  {
+    "name": "evidence",
+    "title": "Evidence review",
+    "sections": [
+      {
+        "title": "Source review state",
+        "sql": "select competitor,title,kind,observed_on,rights,review_state from evidence_review order by competitor,title"
+      }
+    ]
+  },
+  {
+    "name": "battlecards",
+    "title": "Comparison point readiness",
+    "sections": [
+      {
+        "title": "Current and withheld claims",
+        "sql": "select competitor,statement,status,source_url,review_due,coalesce(usable,false) usable from battlecards order by competitor,statement"
       }
     ]
   }

@@ -1,11 +1,48 @@
 [
   {
-    "name": "example",
-    "title": "TODO(author): the first document this industry must produce",
-    "for_each": "select gen_random_uuid() as id, 'Example' as name",
+    "name": "battlecard",
+    "title": "Internal competitor battlecard",
+    "for_each": "select id,name from competitors order by name",
     "file": "name",
     "sections": [
-      { "title": "Details", "sql": "select 'replace me' as item, $1::text as record_id" }
+      {
+        "title": "Reviewed comparison points",
+        "note": "Internal working document. A recorded review is not legal clearance or permission to publish.",
+        "sql": "select statement,response,evidence,source_url,review_due from battlecards where competitor_id=$1 and usable order by statement"
+      },
+      {
+        "title": "Points withheld from use",
+        "sql": "select statement,status,review_due from battlecards where competitor_id=$1 and not coalesce(usable,false) order by statement"
+      }
+    ]
+  },
+  {
+    "name": "evidence-register",
+    "title": "Source substantiation register",
+    "for_each": "select id,name from competitors order by name",
+    "file": "name",
+    "sections": [
+      {
+        "title": "Evidence and review record",
+        "sql": "select title,summary,source_url,observed_on,rights,reviewed_by,review_due from evidence where competitor_id=$1 order by observed_on desc"
+      }
+    ]
+  },
+  {
+    "name": "deal-brief",
+    "title": "Competitive deal brief",
+    "for_each": "select id,name from deals where outcome='open' order by name",
+    "file": "name",
+    "sections": [
+      {
+        "title": "Deal context",
+        "layout": "record",
+        "sql": "select name,owner,currency,amount_cents,next_review from deals where id=$1"
+      },
+      {
+        "title": "Reviewed talking points",
+        "sql": "select b.statement,b.response,b.source_url from battlecards b join deals d on d.competitor_id=b.competitor_id where d.id=$1 and b.usable order by b.statement"
+      }
     ]
   }
 ]
